@@ -1,17 +1,20 @@
+// +build linux
+
 package btrfs
 
 import (
 	"fmt"
-	"os/exec"
 	"path"
-	"strings"
 	"syscall"
 	"time"
 
+	log "github.com/Sirupsen/logrus"
 	graph "github.com/docker/docker/daemon/graphdriver"
 	"github.com/docker/docker/daemon/graphdriver/btrfs"
+	"github.com/pborman/uuid"
 
-	"github.com/libopenstorage/kvdb"
+	"github.com/portworx/kvdb"
+
 	"github.com/libopenstorage/openstorage/api"
 	"github.com/libopenstorage/openstorage/pkg/chaos"
 	"github.com/libopenstorage/openstorage/volume"
@@ -19,6 +22,7 @@ import (
 
 const (
 	Name      = "btrfs"
+	Type      = volume.File
 	RootParam = "home"
 	Volumes   = "volumes"
 )
@@ -28,21 +32,11 @@ var (
 	koStrayDelete chaos.ID
 )
 
-type btrfsDriver struct {
+type driver struct {
 	*volume.DefaultBlockDriver
 	*volume.DefaultEnumerator
 	btrfs graph.Driver
 	root  string
-}
-
-func uuid() (string, error) {
-	out, err := exec.Command("uuidgen").Output()
-	if err != nil {
-		return "", err
-	}
-	id := string(out)
-	id = strings.TrimSuffix(id, "\n")
-	return id, nil
 }
 
 func Init(params volume.DriverParams) (volume.VolumeDriver, error) {
@@ -56,43 +50,46 @@ func Init(params volume.DriverParams) (volume.VolumeDriver, error) {
 		return nil, err
 	}
 	s := volume.NewDefaultEnumerator(Name, kvdb.Instance())
-	return &btrfsDriver{btrfs: d, root: root, DefaultEnumerator: s}, nil
+	return &driver{btrfs: d, root: root, DefaultEnumerator: s}, nil
 }
 
-func (d *btrfsDriver) String() string {
+func (d *driver) String() string {
 	return Name
 }
 
 // Status diagnostic information
-func (d *btrfsDriver) Status() [][2]string {
+func (d *driver) Status() [][2]string {
 	return d.btrfs.Status()
 }
 
+func (d *driver) Type() volume.DriverType {
+	return Type
+}
+
 // Create a new subvolume. The volume spec is not taken into account.
-func (d *btrfsDriver) Create(locator api.VolumeLocator,
-	options *api.CreateOptions,
+func (d *driver) Create(locator api.VolumeLocator,
+	source *api.Source,
 	spec *api.VolumeSpec) (api.VolumeID, error) {
 
-	if spec.Format != api.FsBtrfs && spec.Format != "" {
+	if spec.Format != "btrfs" && spec.Format != "" {
 		return api.BadVolumeID, fmt.Errorf("Filesystem format (%v) must be %v",
-			spec.Format, api.FsBtrfs)
+			spec.Format, "btrfs")
 	}
 
-	volumeID, err := uuid()
-	if err != nil {
-		return api.BadVolumeID, err
-	}
+	volumeID := uuid.New()
 
 	v := &api.Volume{
 		ID:       api.VolumeID(volumeID),
 		Locator:  locator,
 		Ctime:    time.Now(),
 		Spec:     spec,
+		Source:   source,
 		LastScan: time.Now(),
-		Format:   api.FsBtrfs,
+		Format:   "btrfs",
 		State:    api.VolumeAvailable,
+		Status:   api.Up,
 	}
-	err = d.CreateVol(v)
+	err := d.CreateVol(v)
 	if err != nil {
 		return api.BadVolumeID, err
 	}
@@ -109,8 +106,13 @@ func (d *btrfsDriver) Create(locator api.VolumeLocator,
 }
 
 // Delete subvolume
-func (d *btrfsDriver) Delete(volumeID api.VolumeID) error {
+func (d *driver) Delete(volumeID api.VolumeID) error {
 	err := d.DeleteVol(volumeID)
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+
 	chaos.Now(koStrayDelete)
 	if err == nil {
 		err = d.btrfs.Remove(string(volumeID))
@@ -119,9 +121,10 @@ func (d *btrfsDriver) Delete(volumeID api.VolumeID) error {
 }
 
 // Mount bind mount btrfs subvolume
-func (d *btrfsDriver) Mount(volumeID api.VolumeID, mountpath string) error {
+func (d *driver) Mount(volumeID api.VolumeID, mountpath string) error {
 	v, err := d.GetVol(volumeID)
 	if err != nil {
+		log.Println(err)
 		return err
 	}
 	err = syscall.Mount(v.DevicePath,
@@ -137,7 +140,7 @@ func (d *btrfsDriver) Mount(volumeID api.VolumeID, mountpath string) error {
 }
 
 // Unmount btrfs subvolume
-func (d *btrfsDriver) Unmount(volumeID api.VolumeID, mountpath string) error {
+func (d *driver) Unmount(volumeID api.VolumeID, mountpath string) error {
 	v, err := d.GetVol(volumeID)
 	if err != nil {
 		return err
@@ -155,54 +158,46 @@ func (d *btrfsDriver) Unmount(volumeID api.VolumeID, mountpath string) error {
 }
 
 // Snapshot create new subvolume from volume
-func (d *btrfsDriver) Snapshot(volumeID api.VolumeID, labels api.Labels) (api.SnapID, error) {
-	snapID, err := uuid()
+func (d *driver) Snapshot(volumeID api.VolumeID, readonly bool, locator api.VolumeLocator) (api.VolumeID, error) {
+	vols, err := d.Inspect([]api.VolumeID{volumeID})
 	if err != nil {
-		return api.BadSnapID, err
+		return api.BadVolumeID, err
 	}
+	if len(vols) != 1 {
+		return api.BadVolumeID, fmt.Errorf("Failed to inspect %v len %v", volumeID, len(vols))
+	}
+	snapID := uuid.New()
+	vols[0].ID = api.VolumeID(snapID)
+	vols[0].Source = &api.Source{Parent: volumeID}
+	vols[0].Locator = locator
+	vols[0].Ctime = time.Now()
 
-	snap := &api.VolumeSnap{
-		ID:         api.SnapID(snapID),
-		VolumeID:   volumeID,
-		SnapLabels: labels,
-		Ctime:      time.Now(),
-	}
-	err = d.CreateSnap(snap)
+	err = d.CreateVol(&vols[0])
 	if err != nil {
-		return api.BadSnapID, err
+		return api.BadVolumeID, err
 	}
 	chaos.Now(koStrayCreate)
 	err = d.btrfs.Create(snapID, string(volumeID))
 	if err != nil {
-		return api.BadSnapID, err
+		return api.BadVolumeID, err
 	}
-	return snap.ID, nil
-}
-
-// SnapDelete Delete subvolume
-func (d *btrfsDriver) SnapDelete(snapID api.SnapID) error {
-	err := d.DeleteSnap(snapID)
-	chaos.Now(koStrayDelete)
-	if err == nil {
-		err = d.btrfs.Remove(string(snapID))
-	}
-	return err
+	return vols[0].ID, nil
 }
 
 // Stats for specified volume.
-func (d *btrfsDriver) Stats(volumeID api.VolumeID) (api.VolumeStats, error) {
-	return api.VolumeStats{}, nil
+func (d *driver) Stats(volumeID api.VolumeID) (api.Stats, error) {
+	return api.Stats{}, nil
 }
 
 // Alerts on this volume.
-func (d *btrfsDriver) Alerts(volumeID api.VolumeID) (api.VolumeAlerts, error) {
-	return api.VolumeAlerts{}, nil
+func (d *driver) Alerts(volumeID api.VolumeID) (api.Alerts, error) {
+	return api.Alerts{}, nil
 }
 
 // Shutdown and cleanup.
-func (d *btrfsDriver) Shutdown() {
+func (d *driver) Shutdown() {
 }
 
 func init() {
-	volume.Register(Name, volume.File, Init)
+	volume.Register(Name, Init)
 }

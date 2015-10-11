@@ -5,24 +5,27 @@ import (
 	"os"
 	"os/exec"
 	"testing"
+	"time"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/libopenstorage/kvdb"
-	"github.com/libopenstorage/kvdb/mem"
+	"github.com/portworx/kvdb"
+	"github.com/portworx/kvdb/mem"
+
 	"github.com/libopenstorage/openstorage/api"
 	"github.com/libopenstorage/openstorage/volume"
 )
+
+const testPath = "/tmp/openstorage/mount"
 
 // Context maintains current device state. It gets passed into tests
 // so that tests can build on other tests' work
 type Context struct {
 	volume.VolumeDriver
 	volID      api.VolumeID
-	snapID     api.SnapID
+	snapID     api.VolumeID
 	mountPath  string
-	tgtPath    string
 	devicePath string
 	Filesystem string
 }
@@ -31,8 +34,8 @@ func NewContext(d volume.VolumeDriver) *Context {
 	return &Context{
 		VolumeDriver: d,
 		volID:        api.BadVolumeID,
-		snapID:       api.BadSnapID,
-		Filesystem:   string(api.FsBtrfs),
+		snapID:       api.BadVolumeID,
+		Filesystem:   string(""),
 	}
 }
 
@@ -40,8 +43,8 @@ func RunShort(t *testing.T, ctx *Context) {
 	create(t, ctx)
 	inspect(t, ctx)
 	enumerate(t, ctx)
-	format(t, ctx)
 	attach(t, ctx)
+	format(t, ctx)
 	mount(t, ctx)
 	io(t, ctx)
 	unmount(t, ctx)
@@ -57,7 +60,8 @@ func Run(t *testing.T, ctx *Context) {
 }
 
 func runEnd(t *testing.T, ctx *Context) {
-	detach(t, ctx)
+	time.Sleep(time.Second * 2)
+	os.RemoveAll(testPath)
 	shutdown(t, ctx)
 }
 
@@ -67,6 +71,8 @@ func RunSnap(t *testing.T, ctx *Context) {
 	snapEnumerate(t, ctx)
 	snapDiff(t, ctx)
 	snapDelete(t, ctx)
+	detach(t, ctx)
+	delete(t, ctx)
 }
 
 func create(t *testing.T, ctx *Context) {
@@ -74,8 +80,9 @@ func create(t *testing.T, ctx *Context) {
 
 	volID, err := ctx.Create(
 		api.VolumeLocator{Name: "foo"},
-		&api.CreateOptions{FailIfExists: false},
-		&api.VolumeSpec{Size: 10240000,
+		nil,
+		&api.VolumeSpec{
+			Size:    1 * 1024 * 1024 * 1024,
 			HALevel: 1,
 			Format:  api.Filesystem(ctx.Filesystem),
 		})
@@ -125,8 +132,32 @@ func format(t *testing.T, ctx *Context) {
 	}
 }
 
+func waitReady(t *testing.T, ctx *Context) error {
+	total := time.Minute * 5
+	inc := time.Second * 2
+	elapsed := time.Second * 0
+	vols, err := ctx.Inspect([]api.VolumeID{ctx.volID})
+	for err == nil && len(vols) == 1 && vols[0].Status != api.Up && elapsed < total {
+		time.Sleep(inc)
+		elapsed += inc
+		vols, err = ctx.Inspect([]api.VolumeID{ctx.volID})
+	}
+	if err != nil {
+		return err
+	}
+	if len(vols) != 1 {
+		return fmt.Errorf("Expect one volume from inspect got %v", len(vols))
+	}
+	if vols[0].Status != api.Up {
+		return fmt.Errorf("Timed out waiting for volume status %v", vols)
+	}
+	return err
+}
+
 func attach(t *testing.T, ctx *Context) {
 	fmt.Println("attach")
+	err := waitReady(t, ctx)
+	assert.NoError(t, err, "Volume status is not up")
 	p, err := ctx.Attach(ctx.volID)
 	if err != nil {
 		assert.Equal(t, err, volume.ErrNotSupported, "Error on attach %v", err)
@@ -141,32 +172,22 @@ func attach(t *testing.T, ctx *Context) {
 
 func detach(t *testing.T, ctx *Context) {
 	fmt.Println("detach")
-
 	err := ctx.Detach(ctx.volID)
 	if err != nil {
 		assert.Equal(t, ctx.devicePath, "", "Error on detach %s: %v", ctx.devicePath, err)
 	}
 	ctx.devicePath = ""
-
-	err = ctx.Detach(ctx.volID)
-	assert.Error(t, err, "Detaching an already detached device should fail")
 }
 
 func mount(t *testing.T, ctx *Context) {
 	fmt.Println("mount")
 
-	mountPath := "/mnt/voltest"
-	err := os.MkdirAll(mountPath, 0755)
+	err := os.MkdirAll(testPath, 0755)
 
-	tgtPath := "/mnt/foo"
-	err = os.MkdirAll(tgtPath, 0755)
-	assert.NoError(t, err, "Failed in mkdir")
-
-	err = ctx.Mount(ctx.volID, tgtPath)
+	err = ctx.Mount(ctx.volID, testPath)
 	assert.NoError(t, err, "Failed in mount")
 
-	ctx.mountPath = mountPath
-	ctx.tgtPath = tgtPath
+	ctx.mountPath = testPath
 }
 
 func unmount(t *testing.T, ctx *Context) {
@@ -178,7 +199,6 @@ func unmount(t *testing.T, ctx *Context) {
 	assert.NoError(t, err, "Failed in unmount")
 
 	ctx.mountPath = ""
-	ctx.tgtPath = ""
 }
 
 func shutdown(t *testing.T, ctx *Context) {
@@ -228,8 +248,11 @@ func snap(t *testing.T, ctx *Context) {
 	if ctx.volID == api.BadVolumeID {
 		create(t, ctx)
 	}
+	attach(t, ctx)
+	labels := api.Labels{"oh": "snap"}
 	assert.NotEqual(t, ctx.volID, api.BadVolumeID, "invalid volume ID")
-	id, err := ctx.Snapshot(ctx.volID, api.Labels{"oh": "snap"})
+	id, err := ctx.Snapshot(ctx.volID, false,
+		api.VolumeLocator{Name: "snappy", VolumeLabels: labels})
 	assert.NoError(t, err, "Failed in creating a snapshot")
 	ctx.snapID = id
 }
@@ -237,13 +260,13 @@ func snap(t *testing.T, ctx *Context) {
 func snapInspect(t *testing.T, ctx *Context) {
 	fmt.Println("snapInspect")
 
-	snaps, err := ctx.SnapInspect([]api.SnapID{ctx.snapID})
+	snaps, err := ctx.Inspect([]api.VolumeID{ctx.snapID})
 	assert.NoError(t, err, "Failed in Inspect")
 	assert.NotNil(t, snaps, "Nil snaps")
 	assert.Equal(t, len(snaps), 1, "Expect 1 snaps actual %v snaps", len(snaps))
 	assert.Equal(t, snaps[0].ID, ctx.snapID, "Expect snapID %v actual %v", ctx.snapID, snaps[0].ID)
 
-	snaps, err = ctx.SnapInspect([]api.SnapID{api.SnapID("shouldNotExist")})
+	snaps, err = ctx.Inspect([]api.VolumeID{api.VolumeID("shouldNotExist")})
 	assert.Equal(t, 0, len(snaps), "Expect 0 snaps actual %v snaps", len(snaps))
 }
 
@@ -255,7 +278,7 @@ func snapEnumerate(t *testing.T, ctx *Context) {
 	assert.NotNil(t, snaps, "Nil snaps")
 	assert.Equal(t, 1, len(snaps), "Expect 1 snaps actual %v snaps", len(snaps))
 	assert.Equal(t, snaps[0].ID, ctx.snapID, "Expect snapID %v actual %v", ctx.snapID, snaps[0].ID)
-	labels := snaps[0].SnapLabels
+	labels := snaps[0].Locator.VolumeLabels
 
 	snaps, err = ctx.SnapEnumerate([]api.VolumeID{ctx.volID}, nil)
 	assert.NoError(t, err, "Failed in snapEnumerate")

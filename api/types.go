@@ -7,12 +7,8 @@ import (
 // VolumeID driver specific system wide unique volume identifier.
 type VolumeID string
 
+// BadVolumeID invalid volume ID, usually accompanied by an error.
 const BadVolumeID = VolumeID("")
-
-// SnapID driver specific system wide unique snap identifier.
-type SnapID string
-
-const BadSnapID = SnapID("")
 
 // VolumeCos a number representing class of servcie.
 type VolumeCos int
@@ -20,9 +16,9 @@ type VolumeCos int
 const (
 	// VolumeCosNone minmum level of CoS
 	VolumeCosNone = VolumeCos(0)
-	// VolumeCosMedum in-between level of Cos
+	// VolumeCosMedium in-between level of Cos
 	VolumeCosMedium = VolumeCos(5)
-	// VolumeCosNone maximum level of CoS
+	// VolumeCosMax maximum level of CoS
 	VolumeCosMax = VolumeCos(9)
 )
 
@@ -36,7 +32,7 @@ const (
 	Up = VolumeStatus("Up")
 	// Down status failure.
 	Down = VolumeStatus("Down")
-	// Down status up but with degraded performance. In a RAID group, this may indicate a problem with one or more drives
+	// Degraded status up but with degraded performance. In a RAID group, this may indicate a problem with one or more drives
 	Degraded = VolumeStatus("Degraded")
 )
 
@@ -45,14 +41,16 @@ const (
 type VolumeState int
 
 const (
-	// VolumePending is being created
+	// VolumePending volume is transitioning to new state
 	VolumePending VolumeState = 1 << iota
-	// VolumeAvailable disk is ready to be assigned to a container
+	// VolumeAvailable volume is ready to be assigned to a container
 	VolumeAvailable
 	// VolumeAttached is attached to container
 	VolumeAttached
 	// VolumeDetached is detached but associated with a container.
 	VolumeDetached
+	// VolumeDetaching is detach is in progress.
+	VolumeDetaching
 	// VolumeError is in Error State
 	VolumeError
 	// VolumeDeleted is deleted, it will remain in this state while resources are
@@ -61,7 +59,7 @@ const (
 )
 
 // VolumeStateAny a filter that selects all volumes
-const VolumeStateAny = VolumePending | VolumeAvailable | VolumeAttached | VolumeDetached | VolumeError | VolumeDeleted
+const VolumeStateAny = VolumePending | VolumeAvailable | VolumeAttached | VolumeDetaching | VolumeDetached | VolumeError | VolumeDeleted
 
 // Labels a name-value map
 type Labels map[string]string
@@ -76,27 +74,23 @@ type VolumeLocator struct {
 }
 
 // CreateOptions are passed in with a CreateRequest
-type CreateOptions struct {
-	// FailIfExists fail create request if a volume with matching Locator already exists.
-	FailIfExists bool
-	// CreateFromSnap will create a volume with specified SnapID
-	CreateFromSnap SnapID
+type Source struct {
+	// Parent if specified will create a clone of Parent.
+	Parent VolumeID
+	// Seed will seed the volume from the specified URI. Any
+	// additional config for the source comes from the labels in the spec.
+	Seed string
 }
 
 // Filesystem supported filesystems
 type Filesystem string
 
 const (
-	// FsXfs the XFS filesystem
-	FsXfs = Filesystem("xfs")
-	// FsExt4 the EXT4 filesystem
-	FsExt4 = Filesystem("ext4")
-	// FsZfs the ZFS filesystem
-	FsZfs = Filesystem("zfs")
-	// FsBtrfs the Btrfs filesystem
-	FsBtrfs = Filesystem("btrfs")
-	// FsNone no file system, applicable for raw block devices.
-	FsNone = Filesystem("none")
+	FsNone Filesystem = "none"
+	FsExt4 Filesystem = "ext4"
+	FsXfs  Filesystem = "xfs"
+	FsZfs  Filesystem = "zfs"
+	FsNfs  Filesystem = "nfs"
 )
 
 // VolumeSpec has the properties needed to create a volume.
@@ -124,12 +118,19 @@ type VolumeSpec struct {
 	ConfigLabels Labels
 }
 
+// MachineID is a node instance identifier for clustered systems.
 type MachineID string
+
+const MachineNone MachineID = ""
 
 // Volume represents a live, created volume.
 type Volume struct {
 	// ID Self referential VolumeID
 	ID VolumeID
+	// Source
+	Source *Source
+	// Readonly
+	Readonly bool
 	// Locator User specified locator
 	Locator VolumeLocator
 	// Ctime Volume creation time
@@ -158,26 +159,26 @@ type Volume struct {
 	Error string
 }
 
-// VolumeSnap identifies a volume snapshot.
-type VolumeSnap struct {
-	// SnapID system generated ID
-	ID SnapID
-	// VolumeID Volume identifier.
-	VolumeID VolumeID
-	// Ctime Snap creation time.
-	Ctime time.Time
-	// SnapLabel arbitrary name value pairs
-	SnapLabels Labels
-	// Usage
-	Usage uint64
+// Alerts
+type Stats struct {
+	// Reads completed successfully.
+	Reads int64
+	// ReadMs time spent in reads in ms.
+	ReadMs int64
+	// ReadBytes
+	ReadBytes int64
+	// Writes completed successfully.
+	Writes int64
+	// WriteBytes
+	WriteBytes int64
+	// WriteMs time spent in writes in ms.
+	WriteMs int64
+	// IOProgress I/Os curently in progress.
+	IOProgress int64
+	// IOMs time spent doing I/Os ms.
+	IOMs int64
 }
 
-// VolumeStats
-type VolumeStats struct {
-	// TODO
-}
-
-// VolumeAlerts
-type VolumeAlerts struct {
-	// TODO
+// Alerts
+type Alerts struct {
 }
