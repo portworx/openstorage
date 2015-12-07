@@ -14,6 +14,8 @@ var (
 	ErrExist          = errors.New("Driver already exists")
 	ErrDriverNotFound = errors.New("Driver implementation not found")
 	ErrEnoEnt         = errors.New("Volume does not exist.")
+	ErrEnomem         = errors.New("Out of memory.")
+	ErrEinval         = errors.New("Invalid argument")
 	ErrVolDetached    = errors.New("Volume is detached")
 	ErrVolAttached    = errors.New("Volume is attached")
 	ErrVolHasSnaps    = errors.New("Volume has snapshots associated")
@@ -24,14 +26,8 @@ type DriverParams map[string]string
 
 type InitFunc func(params DriverParams) (VolumeDriver, error)
 
-type DriverType string
-
-const (
-	File  = DriverType("FileDriver")
-	Block = DriverType("BlockDriver")
-	Objec = DriverType("ObjectDriver")
-)
-
+// VolumeDriver is the main interface to be implemented by any storage driver.
+// Every driver must at minimum implement the ProtoDriver sub interface.
 type VolumeDriver interface {
 	ProtoDriver
 	BlockDriver
@@ -44,13 +40,13 @@ type ProtoDriver interface {
 	// String description of this driver.
 	String() string
 
+	// Type of this driver
+	Type() api.DriverType
+
 	// Create a new Vol for the specific volume spec.
 	// It returns a system generated VolumeID that uniquely identifies the volume
-	// If CreateOptions.FailIfExists is set and a volume matching the locator
-	// exists then this will fail with ErrEexist. Otherwise if a matching available
-	// volume is found then it is returned instead of creating a new volume.
 	Create(locator api.VolumeLocator,
-		options *api.CreateOptions,
+		Source *api.Source,
 		spec *api.VolumeSpec) (api.VolumeID, error)
 
 	// Delete volume.
@@ -65,22 +61,21 @@ type ProtoDriver interface {
 	// Errors ErrEnoEnt, ErrVolDetached may be returned.
 	Unmount(volumeID api.VolumeID, mountpath string) error
 
-	// Snap specified volume. IO to the underlying volume should be quiesced before
-	// calling this function.
-	// Errors ErrEnoEnt may be returned
-	Snapshot(volumeID api.VolumeID, labels api.Labels) (api.SnapID, error)
+	// Update not all fields of the spec are supported, ErrNotSupported will be thrown for unsupported
+	// updates.
+	Set(volumeID api.VolumeID, locator *api.VolumeLocator, spec *api.VolumeSpec) error
 
-	// SnapDelete snap specified by snapID.
+	// Snapshot create volume snapshot.
 	// Errors ErrEnoEnt may be returned
-	SnapDelete(snapID api.SnapID) error
+	Snapshot(volumeID api.VolumeID, readonly bool, locator api.VolumeLocator) (api.VolumeID, error)
 
 	// Stats for specified volume.
 	// Errors ErrEnoEnt may be returned
-	Stats(volumeID api.VolumeID) (api.VolumeStats, error)
+	Stats(volumeID api.VolumeID) (api.Stats, error)
 
 	// Alerts on this volume.
 	// Errors ErrEnoEnt may be returned
-	Alerts(volumeID api.VolumeID) (api.VolumeAlerts, error)
+	Alerts(volumeID api.VolumeID) (api.Alerts, error)
 
 	// Status returns a set of key-value pairs which give low
 	// level diagnostic status about this driver.
@@ -93,19 +88,15 @@ type ProtoDriver interface {
 // Enumerator provides a set of interfaces to get details on a set of volumes.
 type Enumerator interface {
 	// Inspect specified volumes.
-	// Errors ErrEnoEnt may be returned.
+	// Returns slice of volumes that were found.
 	Inspect(volumeIDs []api.VolumeID) ([]api.Volume, error)
 
 	// Enumerate volumes that map to the volumeLocator. Locator fields may be regexp.
 	// If locator fields are left blank, this will return all volumes.
 	Enumerate(locator api.VolumeLocator, labels api.Labels) ([]api.Volume, error)
 
-	// SnapInspect provides details on this snapshot.
-	// Errors ErrEnoEnt may be returned
-	SnapInspect(snapID []api.SnapID) ([]api.VolumeSnap, error)
-
 	// Enumerate snaps for specified volumes
-	SnapEnumerate(volID []api.VolumeID, snapLabels api.Labels) ([]api.VolumeSnap, error)
+	SnapEnumerate(volID []api.VolumeID, snapLabels api.Labels) ([]api.Volume, error)
 }
 
 // BlockDriver needs to be implemented by block volume drivers.  Filesystem volume
@@ -115,10 +106,6 @@ type BlockDriver interface {
 	// On success the devicePath specifies location where the device is exported
 	// Errors ErrEnoEnt, ErrVolAttached may be returned.
 	Attach(volumeID api.VolumeID) (string, error)
-
-	// Format volume according to spec provided in Create
-	// Errors ErrEnoEnt, ErrVolDetached may be returned.
-	Format(volumeID api.VolumeID) error
 
 	// Detach device from the host.
 	// Errors ErrEnoEnt, ErrVolDetached may be returned.
@@ -158,7 +145,7 @@ func New(name string, params DriverParams) (VolumeDriver, error) {
 	return nil, ErrNotSupported
 }
 
-func Register(name string, driverType DriverType, initFunc InitFunc) error {
+func Register(name string, initFunc InitFunc) error {
 	mutex.Lock()
 	defer mutex.Unlock()
 	if _, exists := drivers[name]; exists {

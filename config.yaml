@@ -1,9 +1,24 @@
 ---
 osd:
+  _cluster:
+    _nodeid: "1"
+    _clusterid: "deadbeeef"
   drivers:
-      nfs:
-        server: "127.0.0.1"
-        path: "/nfs"
-#      aws:
-#        aws_access_key_id: your_aws_access_key_id
-#        aws_secret_access_key: your_aws_secret_access_key
+    coprhd:
+     url: "https://192.168.3.220:4443/"
+     user: "root"
+     password: "D1g1tal*23"
+#   vfs:
+#   pwx:
+#    nfs:
+#      server: "127.0.0.1"
+#      path: "/nfs"
+#    btrfs:
+#      home: "/var/lib/openstorage/btrfs"
+#    aws:
+#      AWS_ACCESS_KEY_ID: your_access_key
+#      AWS_SECRET_ACCESS_KEY: your_secret_access_key
+    buse:
+  graphdrivers:
+    proxy:
+    layer0:

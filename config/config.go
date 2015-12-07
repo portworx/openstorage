@@ -3,14 +3,18 @@ package config
 import (
 	"fmt"
 	"io/ioutil"
+	"os"
 
 	"gopkg.in/yaml.v2"
 
+	"github.com/libopenstorage/openstorage/cluster"
 	"github.com/libopenstorage/openstorage/volume"
 )
 
 type osd struct {
-	Drivers map[string]volume.DriverParams
+	ClusterConfig cluster.Config `yaml:"cluster"`
+	Drivers       map[string]volume.DriverParams
+	GraphDrivers  map[string]volume.DriverParams
 }
 
 type Config struct {
@@ -18,9 +22,14 @@ type Config struct {
 }
 
 const (
-	DriverAPIBase = "/var/lib/osd/driver/"
-	PluginAPIBase = "/var/lib/osd/plugin/"
-	Version       = "v1"
+	PluginAPIBase      = "/run/docker/plugins/"
+	DriverAPIBase      = "/var/lib/osd/driver/"
+	GraphDriverAPIBase = "/var/lib/osd/graphdriver/"
+	UrlKey             = "url"
+	VersionKey         = "version"
+	MountBase          = "/var/lib/osd/mounts/"
+	DataDir            = ".data"
+	Version            = "v1"
 )
 
 var (
@@ -38,7 +47,10 @@ func Parse(file string) (*Config, error) {
 	if err != nil {
 		fmt.Println("Unable to parse OSD configuration: ", err)
 		return nil, fmt.Errorf("Unable to parse OSD configuration: %s", err.Error())
-		return nil, err
 	}
 	return &cfg, nil
+}
+func init() {
+	os.MkdirAll(MountBase, 0755)
+	os.MkdirAll(GraphDriverAPIBase, 0755)
 }
