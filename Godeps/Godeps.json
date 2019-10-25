@@ -1,75 +1,59 @@
 {
-	"ImportPath": "github.com/libopenstorage/openstorage",
+	"ImportPath": "github.com/portworx/openstorage",
 	"GoVersion": "go1.4.2",
+	"GodepVersion": "v80",
 	"Packages": [
-		"./..."
+		"github.com/sirupsen/logrus"
 	],
 	"Deps": [
 		{
-			"ImportPath": "github.com/Sirupsen/logrus",
-			"Comment": "v0.8.2-8-ge3eccfa",
-			"Rev": "e3eccfaeb58b95c9ce22aea6867562f07a0d68c7"
+			"ImportPath": "github.com/davecgh/go-spew/spew",
+			"Comment": "v1.1.1-1-gd8f796a",
+			"Rev": "d8f796af33cc11cb798c1aaeb27a4ebc5099927d"
 		},
 		{
-			"ImportPath": "github.com/aws/aws-sdk-go/aws",
-			"Comment": "v0.6.8-2-g034c293",
-			"Rev": "034c293ded73cf710ba12f9173d45b5d9c69ec20"
+			"ImportPath": "github.com/konsorten/go-windows-terminal-sequences",
+			"Comment": "v1.0.2",
+			"Rev": "f55edac94c9bbba5d6182a4be46d86a2c9b5b50e"
 		},
 		{
-			"ImportPath": "github.com/aws/aws-sdk-go/internal/endpoints",
-			"Comment": "v0.6.8-2-g034c293",
-			"Rev": "034c293ded73cf710ba12f9173d45b5d9c69ec20"
+			"ImportPath": "github.com/pmezard/go-difflib/difflib",
+			"Comment": "v1.0.0-4-g5d4384e",
+			"Rev": "5d4384ee4fb2527b0a1256a821ebfc92f91efefc"
 		},
 		{
-			"ImportPath": "github.com/aws/aws-sdk-go/internal/protocol/ec2query",
-			"Comment": "v0.6.8-2-g034c293",
-			"Rev": "034c293ded73cf710ba12f9173d45b5d9c69ec20"
+			"ImportPath": "github.com/sirupsen/logrus",
+			"Comment": "v1.4.2-37-gfb62dbe",
+			"Rev": "fb62dbe2f2a2c88b150fa1668a773505a7920a3d"
 		},
 		{
-			"ImportPath": "github.com/aws/aws-sdk-go/internal/protocol/query/queryutil",
-			"Comment": "v0.6.8-2-g034c293",
-			"Rev": "034c293ded73cf710ba12f9173d45b5d9c69ec20"
+			"ImportPath": "github.com/sirupsen/logrus/hooks/syslog",
+			"Comment": "v1.4.2-37-gfb62dbe",
+			"Rev": "fb62dbe2f2a2c88b150fa1668a773505a7920a3d"
 		},
 		{
-			"ImportPath": "github.com/aws/aws-sdk-go/internal/protocol/rest",
-			"Comment": "v0.6.8-2-g034c293",
-			"Rev": "034c293ded73cf710ba12f9173d45b5d9c69ec20"
+			"ImportPath": "github.com/sirupsen/logrus/internal/testutils",
+			"Comment": "v1.4.2-37-gfb62dbe",
+			"Rev": "fb62dbe2f2a2c88b150fa1668a773505a7920a3d"
 		},
 		{
-			"ImportPath": "github.com/aws/aws-sdk-go/internal/protocol/xml/xmlutil",
-			"Comment": "v0.6.8-2-g034c293",
-			"Rev": "034c293ded73cf710ba12f9173d45b5d9c69ec20"
+			"ImportPath": "github.com/stretchr/testify/assert",
+			"Comment": "v1.4.0-1-g85f2b59",
+			"Rev": "85f2b59c4459e5bf57488796be8c3667cb8246d6"
 		},
 		{
-			"ImportPath": "github.com/aws/aws-sdk-go/internal/signer/v4",
-			"Comment": "v0.6.8-2-g034c293",
-			"Rev": "034c293ded73cf710ba12f9173d45b5d9c69ec20"
+			"ImportPath": "github.com/stretchr/testify/require",
+			"Comment": "v1.4.0-1-g85f2b59",
+			"Rev": "85f2b59c4459e5bf57488796be8c3667cb8246d6"
 		},
 		{
-			"ImportPath": "github.com/aws/aws-sdk-go/service/ec2",
-			"Comment": "v0.6.8-2-g034c293",
-			"Rev": "034c293ded73cf710ba12f9173d45b5d9c69ec20"
+			"ImportPath": "golang.org/x/sys/unix",
+			"Rev": "b09406accb4736d857a32bf9444cd7edae2ffa79"
 		},
 		{
-			"ImportPath": "github.com/codegangsta/cli",
-			"Comment": "1.2.0-107-g942282e",
-			"Rev": "942282e931e8286aa802a30b01fa7e16befb50f3"
-		},
-		{
-			"ImportPath": "github.com/gorilla/context",
-			"Rev": "215affda49addc4c8ef7e2534915df2c8c35c6cd"
-		},
-		{
-			"ImportPath": "github.com/gorilla/mux",
-			"Rev": "47e8f450ef38c857cdd922ec08862ca9d65a1c6d"
-		},
-		{
-			"ImportPath": "github.com/libopenstorage/kvdb",
-			"Rev": "adecc7b55fa2f33de0a3b0f21e0e3adfbf70512f"
-		},
-		{
-			"ImportPath": "github.com/vaughan0/go-ini",
-			"Rev": "a98ad7ee00ec53921f08832bc06ecf7fd600e6a1"
+			"ImportPath": "gopkg.in/yaml.v2",
+			"Comment": "v2.2.2",
+			"Rev": "51d6538a90f86fe93ac480b35f37b2be17fef232"
 		}
 	]
 }
